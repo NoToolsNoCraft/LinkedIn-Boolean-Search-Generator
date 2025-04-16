@@ -144,6 +144,7 @@
       flex: 1;
       padding: 10px;
       margin-right: 10px;
+      font-size: 18px;
     }
 
     .input-group button {
@@ -172,6 +173,7 @@
       padding: 15px;
       border-radius: 5px;
       white-space: pre-wrap;
+      font-size: 17px;
     }
 
     button {
@@ -313,7 +315,7 @@
 
       <div class="section">
         <h3>Generated Boolean Search</h3>
-        <div id="output"></div>
+        <pre id="output"></pre>
         
       </div>
       <button onclick="copyToClipboard()">Copy to Clipboard</button>
@@ -343,53 +345,158 @@
   </footer>
 </div>
 
-  <script>
-    function addField(sectionId) {
-      const container = document.getElementById(sectionId);
-      const div = document.createElement("div");
-      div.className = "input-group";
-      const input = document.createElement("input");
-      input.type = "text";
-      input.placeholder = `Enter value...`;
-      const removeBtn = document.createElement("button");
-      removeBtn.textContent = "X";
-      removeBtn.onclick = () => div.remove();
-      div.appendChild(input);
-      div.appendChild(removeBtn);
-      container.appendChild(div);
-    }
+<script>
+  // Helper functions
+  function quoteIfNeeded(value) {
+    return value.includes(" ") ? `"${value}"` : value;
+  }
 
-    function collectValues(sectionId) {
-      return [...document.getElementById(sectionId).querySelectorAll("input")]
-        .map(input => input.value.trim())
-        .filter(value => value);
-    }
+  function collectValues(sectionId) {
+    return [...document.getElementById(sectionId).querySelectorAll("input")]
+      .map(input => input.value.trim())
+      .filter(value => value);
+  }
 
-    function generateBoolean() {
-      const jobTitles = collectValues("jobTitles").map(title => `"${title}"`).join(" OR ");
-      const locations = collectValues("locations").map(loc => `"${loc}"`).join(" AND ");
-      const industries = collectValues("industries").map(ind => `${ind}`).join(" OR ");
-      const excludes = collectValues("excludes").map(ex => `NOT "${ex}"`).join(" AND ");
+  const locationExpansions = {
+    "uk": ["UK", "United Kingdom"],
+    "united kingdom": ["UK", "United Kingdom"],
+    "us": ["US", "United States", "USA"],
+    "united states": ["US", "United States", "USA"],
+    "usa": ["US", "United States", "USA"],
+    "uae": ["UAE", "United Arab Emirates"],
+    "germany": ["Germany", "Deutschland"],
+    "netherlands": ["Netherlands", "Holland"],
+    // Add more countries/regions as needed
+  };
 
-      let parts = [];
-      if (jobTitles) parts.push(`(${jobTitles})`);
-      if (locations) parts.push(`(${locations})`);
-      if (industries) parts.push(`(${industries})`);
-      if (excludes) parts.push(`${excludes}`);
+  const industryExpansions = {
+    "apple": ["Apple", "Mac", "iOS"],
+    "microsoft": ["Microsoft", "Windows", "Azure"],
+    "google": ["Google", "Android", "YouTube"],
+    "amazon": ["Amazon", "AWS", "Prime"],
+    // Add more companies/brands/tech domains as needed
+  };
 
-      const finalQuery = parts.join(" AND ");
-      document.getElementById("output").textContent = finalQuery || "No input provided.";
-    }
+  function expandLocations(locations) {
+    const flatSet = new Set();
 
-    function copyToClipboard() {
-        const output = document.getElementById("output").textContent;
-        navigator.clipboard.writeText(output).then(() => {
-            alert("Copied to clipboard!");
-        }).catch(err => {
-            alert("Failed to copy text: " + err);
-        });
-        }
-  </script>
+    return locations.map(loc => {
+      const key = loc.trim().toLowerCase();
+      const expansions = locationExpansions[key];
+
+      if (expansions && expansions.length > 1) {
+        const deduped = expansions
+          .map(quoteIfNeeded)
+          .filter(item => {
+            if (flatSet.has(item.toLowerCase())) return false;
+            flatSet.add(item.toLowerCase());
+            return true;
+          });
+
+        return deduped.length > 1 ? `(${deduped.join(" OR ")})` : deduped[0];
+      } else {
+        const cleaned = quoteIfNeeded(loc);
+        if (flatSet.has(cleaned.toLowerCase())) return null;
+        flatSet.add(cleaned.toLowerCase());
+        return cleaned;
+      }
+    }).filter(Boolean);
+  }
+
+  function expandIndustries(industries) {
+    const flatSet = new Set();
+
+    return industries.map(ind => {
+      const key = ind.trim().toLowerCase();
+      const expansions = industryExpansions[key];
+
+      if (expansions && expansions.length > 1) {
+        const deduped = expansions
+          .map(quoteIfNeeded)
+          .filter(item => {
+            if (flatSet.has(item.toLowerCase())) return false;
+            flatSet.add(item.toLowerCase());
+            return true;
+          });
+
+        return deduped.length > 1 ? `(${deduped.join(" OR ")})` : deduped[0];
+      } else {
+        const cleaned = quoteIfNeeded(ind);
+        if (flatSet.has(cleaned.toLowerCase())) return null;
+        flatSet.add(cleaned.toLowerCase());
+        return cleaned;
+      }
+    }).filter(Boolean);
+  }
+
+  function generateBoolean() {
+  const jobTitlesRaw = collectValues("jobTitles").map(quoteIfNeeded);
+  const locationsRaw = collectValues("locations");
+  const industriesRaw = collectValues("industries");
+  const excludesRaw = collectValues("excludes").map(val => `NOT ${quoteIfNeeded(val)}`);
+
+  // Format job titles
+  const jobTitlesQuery = jobTitlesRaw.length > 1
+    ? `(${jobTitlesRaw.join(" OR ")})`
+    : jobTitlesRaw[0];
+
+  // Format industries
+  const expandedIndustries = expandIndustries(industriesRaw);
+  const industriesQuery = expandedIndustries.length > 1
+    ? `(${expandedIndustries.join(" OR ")})`
+    : expandedIndustries[0];
+
+  // Format locations
+  const expandedLocations = expandLocations(locationsRaw);
+  const locationsQuery = expandedLocations.length > 1
+    ? `(${expandedLocations.join(" OR ")})`
+    : expandedLocations[0];
+
+  // Format excludes
+  const excludesQuery = excludesRaw.join(" AND ");
+
+  // Build formatted multi-line query
+  const parts = [];
+  if (jobTitlesQuery) parts.push(jobTitlesQuery);
+  if (locationsQuery) parts.push(locationsQuery);
+  if (industriesQuery) parts.push(industriesQuery);
+  if (excludesQuery) parts.push(excludesQuery);
+
+  const finalQuery = parts.join(" \nAND ");
+  document.getElementById("output").textContent = finalQuery || "No input provided.";
+}
+
+
+  // Copy to clipboard
+  function copyToClipboard() {
+    const output = document.getElementById("output").textContent;
+    navigator.clipboard.writeText(output).then(() => {
+      alert("Copied to clipboard!");
+    }).catch(err => {
+      alert("Failed to copy text: " + err);
+    });
+  }
+
+  // Add input fields dynamically
+  function addField(sectionId) {
+    const container = document.getElementById(sectionId);
+    const div = document.createElement("div");
+    div.className = "input-group";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = `Enter value...`;
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "X";
+    removeBtn.onclick = () => div.remove();
+    div.appendChild(input);
+    div.appendChild(removeBtn);
+    container.appendChild(div);
+  }
+</script>
+
+
+
+
+
 </body>
 </html>
-
